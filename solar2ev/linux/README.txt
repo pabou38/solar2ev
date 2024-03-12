@@ -2,7 +2,7 @@ To install solar2ev on target (Linux):
 
 - create a zip on the development machine (windows)
 - transfert the zip to Linux (ie app home directory)
-- run install_on_linux_from-zip.sh
+- run install_on_linux_from_zip.sh
 - run enable.sh, to enable systemd Timers
 
 
