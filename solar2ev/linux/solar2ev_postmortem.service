@@ -6,7 +6,7 @@ Description="solar2ev postmortem execution"
 [Service]
 
 #StandardOutput=file:/home/pi/APP/systemd_timer.log 
-StandardOutput=append:/home/pi/APP/systemd_timer.log
+StandardOutput=append:/home/pi/APP/systemd_timer_postmortem.log
 
 #StandardError=syslog
 StandardError=journal

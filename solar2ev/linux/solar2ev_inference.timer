@@ -13,6 +13,8 @@ Description="solar2ev daily inference systemd Timer"
 
 # OnCalendar=DayOfWeek Year-Month-Day Hour:Minute:Second 
 # can have multiple OnCalendar
+
+# every day at 8pm
 OnCalendar=Mon..Sun *-*-* 20:00:00
 
 Unit=solar2ev_inference.service

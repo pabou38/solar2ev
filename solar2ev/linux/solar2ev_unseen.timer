@@ -14,7 +14,7 @@ Description="solar2ev regular testing on unseen data systemd Timer"
 # OnCalendar=DayOfWeek Year-Month-Day Hour:Minute:Second 
 #OnCalendar=Mon..Sun *-*-* 20:00:00
 
-# twice a month
+# twice a month, 1st and 15th, 8am
 OnCalendar=Mon..Sun *-*-1,15 08:00:*
 
 Unit=solar2ev_unseen.service

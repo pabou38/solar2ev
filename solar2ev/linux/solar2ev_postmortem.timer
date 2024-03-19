@@ -9,6 +9,7 @@ Description="solar2ev postmortem systemd Timer"
 #OnBootSec=5min # Specifies a timer that triggers the service five minutes after the system boot. See Monotonic timers for details.
 #OnUnitActiveSec=24h # Specifies a timer that triggers the service 24 hours after the service has been activated (that is, the timer triggers the service once a day). See Real-time timer for details.
 
+# every day at 10am
 #OnCalendar=Mon..Fri *-*-* 10:00:*
 
 # OnCalendar=DayOfWeek Year-Month-Day Hour:Minute:Second 

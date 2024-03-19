@@ -6,7 +6,7 @@ Description="solar2ev regular retrain"
 [Service]
 
 #StandardOutput=file:/home/pi/APP/systemd_timer.log 
-StandardOutput=append:/home/pi/APP/systemd_timer.log
+StandardOutput=append:/home/pi/APP/systemd_timer_retrain.log
 
 #StandardError=syslog
 StandardError=journal

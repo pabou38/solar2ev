@@ -14,10 +14,10 @@ Description="solar2ev regular retrain systemd Timer"
 # OnCalendar=DayOfWeek Year-Month-Day Hour:Minute:Second 
 #OnCalendar=Mon..Sun *-*-* 20:00:00
 
-# Once a month
+# Once a month, the 2nd at 9am
 OnCalendar=Mon..Sun *-*-2 09:00:*
 
-Unit=solar2ev_unseen.retrain
+Unit=solar2ev_retrain.service
 
 [Install]
 WantedBy=multi-user.target
