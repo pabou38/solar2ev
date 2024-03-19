@@ -1098,6 +1098,8 @@ stride=1, sampling=1, shuffle=False, labels=True, categorical=True):
 
         print("DATASET: shuffling. fix seed to get consistent results")
         #tf.random.set_seed(1234)
+        # https://www.tensorflow.org/api_docs/python/tf/data/Dataset#shuffle
+        # For perfect shuffling, a buffer size greater than or equal to the full size of the dataset is required.
         ds = ds.shuffle(seed = 1234, buffer_size = len(ds)*batch_size) # buffer_size elements,
 
     else:

@@ -7,6 +7,12 @@ from keras import backend as K
 import keras_tuner as kt
 
 import numpy as np
+import sys
+import datetime
+
+import logging
+
+running_on_edge = sys.platform in ["linux"]
 
 
 ######################################
@@ -281,8 +287,11 @@ def build_lstm_model(ds, categorical, name='base_lstm', units=64, dropout_value=
         print("adapting norm on input dataset, shape:%s, %d batch" %(iter(feature_ds).next().shape, len(feature_ds)))
         norm.adapt(feature_ds) # either as a tf.data.Dataset, or as a numpy array
 
+        all_norms= [norm]
+
         ##################
-        # just look at what Norm/adapt does , (ie after/before)
+        # TESTING, CURIOUS: just look at what Norm/adapt does , (ie after/before)
+        # not needed for model definition
         ##################
 
         ## looking at one batch only is misleading
@@ -298,6 +307,8 @@ def build_lstm_model(ds, categorical, name='base_lstm', units=64, dropout_value=
 
         ## look at norm effect on entiere dataset
 
+        print("looking at the effect of norm on entiere dataset")
+
         # approch 1.  not sure if valid for std
         mm = 0
         ss = 0
@@ -307,40 +318,48 @@ def build_lstm_model(ds, categorical, name='base_lstm', units=64, dropout_value=
             mm = mm + a1.numpy().mean() # mean of mean OK
             ss = ss + a1.numpy().std() # how to compute std ?
 
-        print("after norm. %d iteration on full dataset: std %0.1f, mean %0.1f" %(i, ss/i,mm/i))
+        print("after norm. %d iteration on full dataset. not sure about sdt: std %0.1f, mean %0.1f" %(i, ss/i,mm/i))
 
         # approch 2:  convert a tf.data dataset to numpy or tensor. cannot do norm(dataset)
  
         a = list(iter(feature_ds.unbatch()))  # list of tensor. a[0].shape TensorShape([90, 6]). len(feature_ds) 1051. 
         b = np.asarray(a)  #b.shape (16816, 90, 6)  16816/16 = 1051
+ 
+        # invert invalid keyword on tf 2.7 (jetso nano)
+        # If True, this layer will apply the inverse transformation to its inputs: it would turn a normalized input back into its original form.
+        #n1 = tf.keras.layers.Normalization(axis=axis, invert=False)
 
-        n1 = tf.keras.layers.Normalization(axis=axis, invert=False)
+        n1 = tf.keras.layers.Normalization(axis=axis)
         n1.adapt(b) # learn
-        b1= n1(b) # normalize 
+        
+        # try to denormalize (ie invert = True)
+        # two issues
+        #  invert = True not supported on tf 2.7 (jetson nano)
+        #  bug in tf 2.10
 
-
-        # try to denormalize
         # https://www.tensorflow.org/api_docs/python/tf/keras/layers/Normalization
         # https://stackoverflow.com/questions/73742308/looks-like-keras-normalization-layer-doesnt-denormalize-properly
         # was a bug in 2.10 ??? and F.. I use 2.10 on windows as last version with GPU 
-        inv_n1 = tf.keras.layers.Normalization(axis=axis, invert=True)
-        inv_n1.adapt(b) 
-        b2 = inv_n1(b1) # denormalize
-
-        # is b2 and b the same ?
-        print("before: std %0.1f, mean %0.1f" %(b.std(), b.mean())) # std 372.8, mean 187.6
-        print("normalized: std %0.1f, mean %0.1f" %(b1.numpy().std(), b1.numpy().mean())) # std 1.0, mean -0.0
-
+        
         x = tf.__version__.split(".") # ['2', '10', '0']
 
         if int(x[0]) >=2 and  int(x[1]) > 10: 
+
+            print("testing denormalization")
+
+            b1= n1(b) # normalize 
+
+            inv_n1 = tf.keras.layers.Normalization(axis=axis, invert=True)
+            inv_n1.adapt(b) 
+            b2 = inv_n1(b1) # denormalize
+
+            # is b2 and b the same ?
+            print("before: std %0.1f, mean %0.1f" %(b.std(), b.mean())) # std 372.8, mean 187.6
+            print("normalized: std %0.1f, mean %0.1f" %(b1.numpy().std(), b1.numpy().mean())) # std 1.0, mean -0.0
+
             print("std %0.1f, mean %0.1f" %(b2.numpy().std(), b2.numpy().mean()))
         else:
-            print("denormalization bug on tf 2.10")
-
-        # !!!!! std = 0 means all samples are the same
-
-        all_norms= [norm]
+            print("denormalization bug on tf 2.10 or not supported on tf 2.7")
 
     #all_inputs and all_norms are list of one or more layers
 
@@ -487,14 +506,22 @@ def build_lstm_model(ds, categorical, name='base_lstm', units=64, dropout_value=
             x = tf.keras.layers.Dropout(dropout_value)(x)
     """ 
 
-    ############# last lateyer , SOFTMAX or dense(1)
+    ############# last layer , SOFTMAX or dense(1)
     if categorical:
         outputs = tf.keras.layers.Dense(hot_size, activation = 'softmax' , name ='softmax')(x) # for one hot
     else:
         outputs = tf.keras.layers.Dense(1, name = 'last_dance')(x) # for scalar
 
 
+    #############
+    # create model
+    #############
     model = tf.keras.Model(inputs=all_inputs, outputs=outputs, name = name)
+
+
+    ##########################
+    # compile
+    ##########################
 
     # metrics and loss are based on categorical
     model.compile(optimizer=tf.keras.optimizers.Adam(0.001),  loss=loss,  metrics=metrics) 
@@ -526,7 +553,16 @@ class CustomCallback_show_val_metrics(tf.keras.callbacks.Callback):
             if k.find("val") != -1 and k.find("loss") == -1:
                 s = s + "%s: %0.3f" %(k, logs[k]) + ", "
 
-        print("epoch: %d, %s"  %(epoch, s), end = "\r" )
+        s = "epoch: %d, %s"  %(epoch +1 , s) # looks like epochs start at 0
+     
+        if running_on_edge:
+            # log to file to examine later
+            logging.info("custom call back on edge: epoch end: %s" %s)
+            print(s)
+
+        else:
+            # just print on same line
+            print(s, end = "\r" )
 
 
     def on_train_end(self, logs=None):
@@ -537,7 +573,10 @@ class CustomCallback_show_val_metrics(tf.keras.callbacks.Callback):
             if k.find("val") != -1 and k.find("loss") == -1:
                 s = s + "%s: %0.3f" %(k, logs[k]) + ", "
 
-        print("Training end: %s"  %s)
+        print("custom call back: Training end: %s %s"  %(s, datetime.datetime.now()))
+
+        if running_on_edge:
+            logging.info("custom call back on edge: training end: %s %s" %(datetime.datetime.now(), str(keys)))
         
 
 

@@ -40,13 +40,16 @@ def parse_arg(): # parameter not used yet
     # retrain from scratch (vs continue training)
     # unseen run inference and update GUI text widget
 
-    # move as stanbalone
+    # move as standalone
     #parser.add_argument("-s", '--search', help='brutal force search best features. default False (ie do not set)', required=False, action="store_true")
     
     parser.add_argument("-k", '--kerastuner', help='use keras tuner to search for hyperparameters. optional. default False (ie do not use)', required=False, action="store_true")
     parser.add_argument("-s", '--synthetic', help='create synthetic data (SDV). optional. default False (ie do not use)', required=False, action="store_true")
 
     parser.add_argument("-p", '--plot', help='plot many view of training data. optional. default False', required=False, action="store_true")
+
+    parser.add_argument("-l", '--test_blynk', help='test Blynk. update model tab. optional. default False', required=False, action="store_true")
+
 
     # return from parsing is NOT a dict, a namespace . can access as parsed_args.new if stay as namespace
     parsed_args=parser.parse_args()

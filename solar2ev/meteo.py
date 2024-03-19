@@ -6,7 +6,6 @@ import requests
 import bs4
 from bs4 import BeautifulSoup
 # pip install used python 3.8  (set vscode interpreter , bottom rigth from 3.10 to 3.8)
-import re
 
 import copy #deepcopy
 
@@ -21,6 +20,9 @@ import numpy as np
 import config_features
 
 from copy import deepcopy
+
+print("requests:" , requests.__version__)
+print("bs4:", bs4.__version__)
 
 # # extracted from the web and columns names for scrapped meteo csv
 header_csv = ['date', 'hour', 'temp', 'humid', 'direction','wind', 'pressure'] 
@@ -81,7 +83,7 @@ def one_day(date: datetime, expected_hours:int, station_id = config_features.sta
 
 
 
-def one_day_meteo_ciel(date: datetime, expected_hours:int, station_id = config_features.station_id) -> dict: # month 0 to 11
+def one_day_meteo_ciel(date: datetime, expected_hours=24, station_id = config_features.station_id) -> dict: # month 0 to 11
 
     # return dict with hour as str as key, 
     # fill missing hours is less than expected_hours
@@ -165,7 +167,7 @@ def one_day_meteo_ciel(date: datetime, expected_hours:int, station_id = config_f
     # how to go 1 lever deeper
     ##############
     # .children is a <list_iterator object at 0x00000145FED30EB0>
-    # cannot do .cildren[0]
+    # cannot do .children[0]
     # convert to list list(xx.children)
     # len(list(xxx.children))
     # list(xx.children)[0] is a <class 'bs4.element.Tag'>
@@ -177,38 +179,45 @@ def one_day_meteo_ciel(date: datetime, expected_hours:int, station_id = config_f
 
 
     tag = list(soup.children) # len 4
+    # tag[2] is head (contains body)
+    if len(tag) !=4:
+        print("WARNING, 1st level html does not contains 4 tags")
+
 
     """
     <class 'bs4.element.Doctype'> The first is a Doctype object, which contains information about the type of the document.
     <class 'bs4.element.NavigableString'> The second is a NavigableString, which represents text found in the HTML document.
     <class 'bs4.element.Tag'>    <html><head> The final item is a Tag object, which contains other nested tags.
-    '\n'
+    
     tag[0] 'HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd"'
     tag[1] '\n'
-    tag[2] <html><head>  /body /html tag[3] '\n'
+    tag[2] <html><head> ....  </body> </html>
+    tag[3] '\n'
     """
 
-    # this is the area of interest <html>
+    # entiere html
+    ## will look for table from there
     h = tag[2] # <class 'bs4.element.Tag'>
 
     #title = h.find_all('title')
     # [<title>Meteociel - O...el</title>]
     # 0:<title>Meteociel - Observations Lans-en-Vercors - Les Allières (38) - données météo de la station  - Tableaux horaires en temps réel</title>
     #len():1
-
-    tmp = list(h.children) # list of tags below html
+    # explore html
+    tmp = list(h.children) # list of tags below html, len 3
 
     # tmp[0]  /head
     # tmp[1] \n
     # tmp[2] /body
 
-    # data we look for is in body
+    # body
     body = tmp[2] # <class 'bs4.element.Tag'> <body>
    
-    b = list(body.children) # list of tags below body , len 5   contains 2 tables 
-    # b[0] b[2] b[4] \n
-    # b[1] table  b[3] table 
-
+    b = list(body.children) # list of tags below body , len 7   contains 2 tables 
+    # b[0] b[2] b[4] b[6] \n
+    # b[1] script  
+    # b[3] table <table align="center" border="0" width="990">. DATA TABLE BURRIED HERE
+    # b[5] table <table align="center" bgcolor="#97bedd" border="0" cellpadding="0" cellspacing="5" width="980">
     
  
     """
@@ -231,18 +240,48 @@ def one_day_meteo_ciel(date: datetime, expected_hours:int, station_id = config_f
 
 
     #############################################
-    # actual daily data table, one row per hour
+    # look for actual daily data table (one row per hour)
     # for some day, some data missing on few hours
+    # starts from  body
     ############################################
 
     # could use either h.find_all or body.find_all
-    tmp = h.find_all('table', bordercolor='#C0C8FE', bgcolor='#EBFAF7') # returns list of ds4.element.tag
-    assert len(tmp) == 1, ("found more than ONE daily data table. scrapping screwed")
+    # could use h or body or b[3]
 
-    data_table = tmp[0] # only one
+    tmp = body.find_all('table', bordercolor='#C0C8FE', bgcolor='#EBFAF7') # returns <class 'bs4.element.ResultSet'> 
+    
+    # different behavior on PI/windows and Jetson
+    #assert len(tmp) == 1, ("found more than ONE daily data table. scrapping screwed")
+
+    # debug
+    print("find table", type(tmp), len(tmp)) # <class 'bs4.element.ResultSet'> 1
+    #print(tmp)
+    # [<table bgcolor="#EBFAF7" border="1" bordercolor="#C0C8FE"
+
+    assert type(tmp) == bs4.element.ResultSet, "unexpected bs4 type"
+
+    # <class 'bs4.element.ResultSet'>, can do len(tmp) =1
+    # type(tmp[0]) <class 'bs4.element.Tag'>
+
+    assert len(tmp) != 0 , "bs4.element.ResultSet len 0, ie could not find data table based on color"
+
+    if len(tmp) >1:
+        print("WTF. found more than 1 table with given color", len(tmp))
+        print(tmp[0])
+        print(tmp[1])
+        sys.exit(1)
+
+    try:
+        data_table = tmp[0] # only one (or first one ?)
+        assert type(data_table) == bs4.element.Tag, "unexpected  bs4 type"
+
+    except Exception as e:
+        print("cannot get data_table", str(e))
+        sys.exit(1)
 
 
     one_day_table = list(data_table.children) # list of rows in table , ie ONE day
+    #  len 50, <tr> .. </tr>  and spaces
 
     """
     list of row, each row contains multiple data cells 
@@ -777,19 +816,26 @@ def scrap_meteo(file=meteo_file, start_date=datetime.datetime(2021,3,10), sleep_
     return(True)
 
 
-
 if __name__ == "__main__":
 
-    file = meteo_file
+    debug = True
+    
+    if debug:
 
-    print('off line scrapping meteo to: %s' %file)
+        print("debugging scapping")
+        ret = one_day_meteo_ciel(datetime.datetime(2024,3,10))
+        print(len(ret), ret)
 
-    # can scrap before installation (ie 1st day of full production, meteo will be truncated to start at installtion date)
-    r = scrap_meteo(file, sleep_time=5, start_date=datetime.datetime(2021,3,10))
+        assert len(ret) == 24 
 
+    else:
 
+        file = meteo_file
 
-
+        print('off line scrapping meteo to: %s' %file)
+        # can scrap before installation (ie 1st day of full production, meteo will be truncated to start at installtion date)
+        scrap_meteo(file, sleep_time=5, start_date=datetime.datetime(2021,3,10))
+        print("\nscrap done. please go to solar2ev")
 
 """
 for outer:

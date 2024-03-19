@@ -8,6 +8,7 @@ import pandas as pd
 import numpy as np
 
 from sklearn.metrics import classification_report # precision, accuracy
+
 from scipy.stats import shapiro# to test if distribution is gaussian
 
 import matplotlib.pyplot as plt
@@ -50,15 +51,16 @@ except Exception as e:
 ################
 
 @dec_elapse
-def train(model, epochs, train_ds , val_ds, model_param_dict, verbose = 1) -> Tuple[dict,float]:
+def train(model, epochs, train_ds , val_ds, model_param_dict, verbose = 1, checkpoint=True) -> Tuple[dict,float]:
 
     # call keras fit
     # validation split already done
     # can be called multiple time, because of different validation strategies, ie fixed, k fold etc ..
     # categorical used to query metric to watch (for callback) - could also use pabou.is_categorical() 
     # callback list created here
-  
 
+    # use of checkpoint callback optional
+  
     s= "Start training on max %d epochs" %epochs
     print(s)
     logging.info(s)
@@ -75,8 +77,12 @@ def train(model, epochs, train_ds , val_ds, model_param_dict, verbose = 1) -> Tu
     # watch: metric used by early stopping and reduce lrn on plateau
     # rather monitor loss than accuracy. accuracy not meaningfull for inbalanced dataset ?
 
-    callbacks_list = pabou.get_callback_list(early_stop = watch, reduce_lr = watch, tensorboard_log_dir = './tensorboard_dir')
-    #def get_callback_list(early_stop = None, reduce_lr = None, tensorboard_log_dir=None, checkpoint_path=None, min_delta=1e-4, patience=7)
+    # checkpoint bool: enable saving model or weigth (best only or all) during training
+    # if enabled, will log to console status of improvement (saving if improved, or no improvement)
+    # dir and file names managed in get_callback_list()
+
+    # use of checkpoints callback defined here
+    callbacks_list = pabou.get_callback_list(early_stop = watch, reduce_lr = watch, checkpoint=checkpoint, tensorboard_log_dir = './tensorboard_dir')
 
     # show validation metrics on same line at end of each epochs
     callbacks_list.append(model_solar.CustomCallback_show_val_metrics()) # ie end epochs
@@ -112,6 +118,8 @@ def train(model, epochs, train_ds , val_ds, model_param_dict, verbose = 1) -> Tu
 
     print('\n===> fit with %d batches. max %d epochs\n' % (len(train_ds), epochs))
 
+    logging.info("start training (model.fit)")
+
     start = time()
 
     # Keras fit is here
@@ -137,6 +145,8 @@ def train(model, epochs, train_ds , val_ds, model_param_dict, verbose = 1) -> Tu
     """
 
     elapse = time() - start
+
+    logging.info("training ended")
 
     # actual epoch are different from max epoch
     # also different from best epoch
@@ -245,7 +255,8 @@ def loss_and_all(test_ds, model, loss):
 # created with tf.math.confusion_matrix
 ######################
 
-def build_confusion_matrix_on_ds(model, test_ds)->Tuple[np.array, list[int], list[int]]:
+# ubuntu does not allow list[int]
+def build_confusion_matrix_on_ds(model, test_ds)->Tuple[np.array, list, list]:
 
     # should only be used for categorical
 
@@ -683,7 +694,7 @@ def plot_examine_training_results(model, test_ds,history, model_param_dict)->dic
         error = pred - labels
 
         # non absolute
-        print("plot error distribution:\n", error)
+        print("plot error distribution")
         various_plots.single_histogram(error, 25, title='training errors distribution for test set')
 
         p_r_dict = {}
@@ -830,7 +841,8 @@ def analyze_error_distribution(non_absolute_errors: np.array)->None:
         
     suptitle = "error distribution"
     # facecolor = inside of fig
-    figure= plt.figure(figsize=(5,5), facecolor="blue", edgecolor = "red" ) # figsize = size of box/window
+    # blue facecolor for figure is not very readable
+    figure= plt.figure(figsize=(5,5), facecolor="#42f5e6", edgecolor = "red" ) # figsize = size of box/window
     plt.suptitle(suptitle) # on very top
     plt.ylabel('count')
     plt.xlabel('error kwh')
@@ -862,7 +874,7 @@ def analyze_error_distribution(non_absolute_errors: np.array)->None:
 
 
     suptitle = "absolute error distribution"
-    figure= plt.figure(figsize=(5,5), facecolor="blue", edgecolor = "red" ) # figsize = size of box/window
+    figure= plt.figure(figsize=(5,5), facecolor="#42f5e6", edgecolor = "red" ) # figsize = size of box/window
     plt.suptitle(suptitle) # on very top
     plt.ylabel('count')
     plt.xlabel('absolute error kwh')

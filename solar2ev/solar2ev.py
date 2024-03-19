@@ -31,8 +31,12 @@ version = 3.35 # a lot of plot cleaning
 version = 3.36 # precision, recall from sklearn
 version = 3.37 # analyze confusion matrix
 version = 3.38 # enphase, interpolate production (internet down)
-version = 3.39 # deep copy. 
+version = 3.39 # deep copy
 version = 3.40 # sdv
+version = 3.41 # clean systemd config files
+version = 3.42 # beautifulsoup4 jetson
+version = 3.43 # sdv, freeze LSTM
+version = 3.44 # automate sdv exploration
 
 # https://medium.com/@shouke.wei/a-practical-example-of-transfer-learning-for-time-series-forecasting-9519f3e94087
 # https://medium.com/@shouke.wei/a-stacked-lstm-based-time-series-model-for-multi-step-ahead-forecasting-a387e4020faf
@@ -40,11 +44,15 @@ version = 3.40 # sdv
 
 #pip install py-spy #to profile
 
+# import early,  cannot allocate memory in static TLS block on Jetson
+from sklearn.metrics import classification_report # precision, accuracy
+
 import sys
 import datetime
 
-# print early for timestamp in std output
-print(datetime.datetime.now(), version)
+# print early for timestamp in std output.
+# will go in stdout looging to file
+print("%s: version %0.2f" %(datetime.datetime.now(), version))
 
 import my_arg
 
@@ -94,14 +102,22 @@ print("make sure tf runs on GPU: ", tf.config.list_physical_devices('GPU'))
 
 
 print('GPU name: ', tf.test.gpu_device_name())
+# deprecated, but shows compute capability
 # '/device:GPU:0'
 # 2023-12-11 06:38:28.535447: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1532] 
 # Created device /device:GPU:0 with 5412 MB memory:  -> device: 0, name: NVIDIA GeForce RTX 4070 Laptop GPU, pci bus id: 0000:01:00.0, compute capability: 8.9
 
 print('built with CUDA? ', tf.test.is_built_with_cuda())
 
+# pip install scikit-learn
+#from sklearn.model_selection import KFold
+#from sklearn.model_selection import TimeSeriesSplit
+#from sklearn.model_selection import train_test_split
+
+# test normality
+from scipy.stats import shapiro
+
 from bs4 import BeautifulSoup
-# pip install used python 3.8  (set vscode interpreter , bottom rigth from 3.10 to 3.8)
 
 from calendar import monthrange
 from time import sleep, time, perf_counter
@@ -109,31 +125,38 @@ import datetime
 import os
 import logging
 import sys
+import platform
 
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 
-# pip install scikit-learn
-from sklearn.model_selection import KFold
-from sklearn.model_selection import TimeSeriesSplit
-from sklearn.model_selection import train_test_split
 
-# test normality
-from scipy.stats import shapiro
+print( "system:", platform.system())
+print( "processor:", platform.processor())
+print( "machine:", platform.machine())
+print( "system:", platform.system())
+print( "version:", platform.version())
+print( "uname:", platform.uname())
 
-
-# pip install keras-tuner 
-import keras_tuner as kt # cannot import name 'keras' from 'tensorflow' with tf 2.11  2.10 ok
-print("kt: ", kt.__version__)
-
-import sdv as sdv
-print("sdv: ", sdv.__version__)
 
 # bool to determine if we are running on the Jetson/PI 
 # eg do not evaluate model after loading, 
-running_on_edge = sys.platform in ["linux"]
+running_on_edge = platform.processor in ["aarch64"]
+
+if not running_on_edge:
+
+    # pip install keras-tuner 
+    import keras_tuner as kt # cannot import name 'keras' from 'tensorflow' with tf 2.11  2.10 ok
+    print("kt: ", kt.__version__)
+
+    import sdv as sdv
+    print("sdv: ", sdv.__version__)
+
+else:
+    print("\n\nrunning on edge\n\n")
+
 
 from typing import Tuple
 # -> Tuple[int, int]
@@ -158,7 +181,16 @@ if os.path.exists(log_file) == False:
 # The call to basicConfig() should come before any calls to debug(), info()
 # https://docs.python.org/3/library/logging.html#logging.basicConfig
 # https://docs.python.org/3/howto/logging.html#changing-the-format-of-displayed-messages
-logging.basicConfig(filename=log_file,  encoding='utf-8', format='%(levelname)s %(name)s %(asctime)s %(message)s',  level=logging.INFO, datefmt='%m/%d/%Y %I:%M')
+    
+# encoding not supported on ubuntu/jetson ?
+try:
+    logging.basicConfig(filename=log_file,  encoding='utf-8', format='%(levelname)s %(name)s %(asctime)s %(message)s',  level=logging.INFO, datefmt='%m/%d/%Y %I:%M')
+except:
+    try:
+        logging.basicConfig(filename=log_file, format='%(levelname)s %(name)s %(asctime)s %(message)s',  level=logging.INFO, datefmt='%m/%d/%Y %I:%M')
+    except Exception as e:
+        print(str(e))
+        sys.exit(1)
 
 # define a name (used in %(name)s )
 # name are any hiearchy
@@ -171,7 +203,10 @@ logger.info("logger defined with name")
 # https://docs.python.org/3/howto/logging.html#logging-from-multiple-modules
 
 
-logging.info('-------------- solar2ev starting v%0.2f ...............' %version) # INFO root 2024-02-01 08:52:46,327 -----
+
+s =  '-------------- solar2ev starting v%0.2f ...............' %version 
+print(s)
+logging.info(s)  # INFO root 2024-02-01 08:52:46,327 -----
 
 p = "../PABOU"
 sys.path.insert(1, p)
@@ -227,6 +262,9 @@ import shared
 import meteo
 import enphase
 import vpins
+
+# to save model, weigths, json
+models_dir = pabou.models_dir
 
 
 ###### housekeeping
@@ -423,9 +461,6 @@ features_input_csv = config_features.features_input_csv  # available from differ
 # test on unseen: concatenated some trained data (previous days) to created a feature. create ds and test prediction
 features_input_untrained_csv = "features_input_untrained.csv"
 
-# synthetic data created. this app assumes it exists
-synthetic_data_csv =config_model.synthetic_data_csv
-
 hot_size = len(prod_bin_labels)  # len of softmax, aka one hot
 
 # compute len of sequence
@@ -453,7 +488,6 @@ print("hotsize, sequence length:" , hot_size, seq_len)
 
 ##### dataset #######
 # create dataset
-# if vault: create new dataset from synthetic and combine datasets
 # validation split
 # histograms (dataset)
 
@@ -490,7 +524,7 @@ print("hotsize, sequence length:" , hot_size, seq_len)
 # GOAL: start blynk for all options which requires updating or reading from GUI
 #################################
 
-use_GUI = arg['inference'] or arg["postmortem"] or arg["charge"] or arg["unseen"]
+use_GUI = arg['inference'] or arg["postmortem"] or arg["charge"] or arg["unseen"] or arg["test_blynk"]
 
 # NOTE: not started for training, vault, tuner, retrain, benchmark
 # this means retrain improvement cannot be communicated, and possibly a less accurate model will overwrite the current one ?
@@ -1019,23 +1053,28 @@ if arg["retrain"]:
 
 ####################################################
 # df_model (features) ready for dataset creation
-# real data (initial scrapped or loaded from csv, possibly concatenated with untrained), or synthetic
+# real data (initial scrapped or loaded from csv, possibly concatenated with untrained),
 ####################################################
 
 print("\n")
 print("##################################################################################################")
 print("df_model (and csv) ready for dataset creation")
-print("real data (just scrapped or loaded from csv, then possibly concatenated with untrained for retraining), or only synthetic data")
+print("real data (just scrapped or loaded from csv, then possibly concatenated with untrained for retraining")
 print("##################################################################################################")
-
-#############################
-# "simulate" smaller dataset to see impact of synthetic data ?
-#############################
-#df_model = df_model.iloc[:24*365]
 
 last_seen = df_model.iloc[-1] [0]
 print("df_model last date: %s" %last_seen) 
 
+
+##############################
+# simulate smaller dataset , ie 1 year only
+##############################
+
+"""
+print("simulate smaller dataset")
+df_model = df_model.iloc[:365*24]
+print(len(df_model), len(df_model)/24)
+"""
 
 #########################
 # can we think of a naive model to compare with ??
@@ -1069,20 +1108,16 @@ print("CURRENTLY configured production bins: ", config_features.config["prod_bin
 print("PLEASE use below to update bins to get equal number of samples per bins")
 
 quartile = energy.quantile([.33, .66]) # 3 bins serie
-print("energy as 3 bins:")
-print(quartile)
+print("energy as 3 bins: ", quartile.to_list())
 
 quartile = energy.quantile([.25, .5, .75]) # quartile , returns serie
-print("energy as 4 bins (quartile):")
-print(quartile) # serie
+print("energy as 4 bins (quartile): ", quartile.to_list())
 
 quartile = energy.quantile([.5]) # quartile , returns serie
-print("energy as 2 bins (median):")
-print(quartile) # serie
+print("energy as 2 bins (median): ", quartile.to_list())
 
 quartile = energy.quantile([.2, 0.4, 0.6, 0.8]) # quartile , returns serie
-print("energy as 5 bins:")
-print(quartile) # serie
+print("energy as 5 bins: ", quartile.to_list())
 
 ############################################################
 # GOAL: build sequence dataset ds
@@ -1098,219 +1133,7 @@ input_feature_list, days_in_seq, seq_len, retain, selection, seq_build_method, h
 stride=stride, sampling=sampling, shuffle=shuffle, categorical=categorical)
 
 
-##########################################
-# GOAL: vault, creates larger sequence dataset 
-# by concatenating real data (training only) with synthetic
-##########################################
-if arg["synthetic"]:
-
-    # ds is real data
-
-    ###########################
-    # creates synthetic dataset
-    ############################
-    # load synthetic data already created OFFLINE
-    # chose order here  
-
-    # NOTE: combine at dataset level to avoid mixing real days and synthetic days in a sequence
-    # could also train with one dataset and continue training with the other one
-    # could also finetune with synthetic ? 
-
-    print("\n!!! VAULT: make sure to first run synthetic.py to generate synthetic data before using this option")
-
-    print("loading synthetic data from %s" %synthetic_data_csv)
-    try:
-        df_model_syn =  pd.read_csv(synthetic_data_csv)
-    except Exception as e:
-        print("cannot load synthetic data %s" %str(e))
-        raise Exception ("make sure to run synthetic data generation before using this option")
-
-    #################################################
-    # validate features in syn data are compatible with real data
-    ################################################
-    s =  df_model_syn.columns.to_list() # columns used in synthetic data
-    print("synthetic data %s" %s)
-    print("network inputs %s" %config_features.config["input_feature_list"]) # all heads
-
-    # build list of features used by network
-    f = []
-    for c1 in config_features.config["input_feature_list"]:
-        for c in c1:
-            f.append(c)
-    f = list(set(f)) # columns used in real data
-
-    #synthetic data ['temp', 'year', 'pressure', 'production']
-    #real data [('temp', 'pressure', 'production', 'sin_month', 'cos_hour')]
-    
-    #s.remove('year') # in place, returns None  already removed
-
-    # use set as order matter in list
-    # synthetic may still have month
-    assert set(f).issubset(set(s)) , "real data is not a subset of synthetic data%s %s" %(f,s)
-
-    #print("real data %s" %pd.read_csv(features_input_csv).columns.to_list())
-
-    ##########################################
-    # check syn data
-    ##########################################
-
-    print("synthetic data len: %d days: %d, years: %0.1f" %(len(df_model_syn), len(df_model_syn)/24, len(df_model_syn)/(24*365)))
-
-    # concatenation at dataset level, not dataframe
-    # NOTE: concat ONLY training part of real data , ie new ds = real data's train set + synthetic
-    # use real data's test set later to validate new model performance
-    # NOTE: witll train FROM SCRATCH on larger ds (vs continue training)
-
-    # number of sequence in real dataset 
-    assert nb_seq == len(list(ds.unbatch().batch(1).as_numpy_iterator())) # this takes a few sec to run
-    # len(ds) is nb batch
-    print("\nVAULT: real data: dataset %d batches, %d sequences. ratio: %0.2f" %(len(ds), nb_seq, nb_seq/len(ds)))
-
-    ##############
-    # build dataset from syn data
-    ##############
-    print("VAULT: first create dataset from synthetic data")
-
-    ds_syn, nb_seq_syn, nb_hours_syn = \
-    dataset.build_dataset_from_df(df_model_syn, \
-    input_feature_list, days_in_seq, seq_len, retain, selection, seq_build_method, hot_size, batch_size, prod_bins, prod_bin_labels, 
-    stride=stride, sampling=sampling, shuffle=shuffle, categorical=categorical)
-
-    assert nb_seq_syn == len(list(ds_syn.unbatch().batch(1).as_numpy_iterator()))
-
-    print("VAULT: syn data dataset %d batches, %d sequences; ratio %0.2f" %(len(ds_syn), nb_seq_syn, nb_seq_syn/len(ds_syn)))
-
-
-    ############################
-    # will contatenate ONLY with training part of real data
-    # keep real data test as a side, to test later
-    ############################
-    (train_ds_real, _, test_ds_real, _) = dataset.fixed_val_split(ds, nb_seq, nb_hours, split, retain, batch_size)
-    nb_seq_real = len(list(train_ds_real.unbatch().batch(1).as_numpy_iterator()))
-
-
-    ########################
-    # we have now 2 dataset
-    ########################
-
-
-    if config_model.sdv_train == "retrain":
-
-        #############################
-        # concatenate synthetic and real data  dataset in one dataset and train from scratch
-        # think about order. syn, then real
-        #############################
-
-        print("\nVAULT: %s: concatenating synthetic data dataset and real data dataset (excluding test set) to create larger dataset" %config_model.sdv_train)
-
-        # retrain model from scratch with concatenation of real + syn
-        # think about order
-        # https://www.tensorflow.org/api_docs/python/tf/data/Dataset
-
-        #### concatenates real data (training) dataset with synthetic data dataset
-        # at this point, len(ds) and len(ds_real) are know (in batches)
-
-        ###### flattening creates two problems
-        # len is lost, need to set cardinality
-        # .batch() creates extra dim    # TensorShape([1, 45, 5]) to # TensorShape([16, 1, 45, 5])
-        
-        # keep batch as it
-        #ds = ds.unbatch().batch(1)
-        #ds_real = ds_real.unbatch().batch(1)
-        # len(ds), len(ds_real)  TypeError: The dataset length is unknown.
-
-        print("vault: concatenate real data dataset (training) with synthetic data dataset")
-        print("vault: REAL before concatenation: input ", iter(train_ds_real).next()[0].shape)
-        print("vault: REAL before concatenation: label ", iter(train_ds_real).next()[1].shape)
-        print("vault: REAL ds element spec", train_ds_real.element_spec)
-
-        print("vault: SYNTHETIC before concatenation: input ", iter(ds_syn).next()[0].shape)
-        print("vault: SYNTHETIC before concatenation: label ", iter(ds_syn).next()[1].shape)
-        print("vault: SYNTHETIC ds element spec", ds_syn.element_spec)
-
-
-        # The input dataset and dataset to be concatenated should have compatible element specs
-        assert train_ds_real.element_spec == ds_syn.element_spec
-    
-        # retrain model from scratch with concatenation of real + syn
-        # think about order
-        # https://www.tensorflow.org/api_docs/python/tf/data/Dataset
-
-
-        #ds = train_ds_real.concatenate(ds_syn) # dataset as argument comes last
-
-        # ds_syn then ds_real, ie fist batch will be from syn
-        ds = ds_syn.concatenate(train_ds_real)
-
-        print("vault: after concatenation: input ",  iter(ds).next()[0].shape)
-        print("vault: after concatenation: label ",  iter(ds).next()[1].shape)
-        print("vault: element spec", ds.element_spec)
-        assert ds.element_spec == ds_syn.element_spec
-        # check did not loose any sequence
-        nb_seq_total = len(list(ds.unbatch().batch(1).as_numpy_iterator()))
-        
-        assert nb_seq_total == nb_seq_real + nb_seq_syn
-
-        print("vault: concatenated: number on inputs: real data (training only): %d, synthetic data: %d. total: %d" %(nb_seq_real, nb_seq_syn, nb_seq_total))
-        # ds is now concatenated (real + syn)
-
-        nb_seq = nb_seq_total
-        # days, nb_hours is not updated. leave as it. not important
-
-        # set cardinality if len is lost (eg when flattening). as some code expect to do len(ds)
-        #https://www.tensorflow.org/api_docs/python/tf/data/experimental/assert_cardinality
-        #ds = ds.apply(tf.data.experimental.assert_cardinality(nb_seq_total))
-        #assert ds.cardinality().numpy() == nb_seq_total
-        #assert len(ds)==nb_seq_total
-
-        # shuffle ? , ie keep real and syn sequentially separated or not ?
-        ds = ds.shuffle(nb_seq_total)
-
-        ##### batch add a dimension if I try to rebatch after flattening to batch = 1
-        # TensorShape([1, 45, 5])
-        #ds = ds.batch(batch_size)
-        # TensorShape([16, 1, 45, 5])
-
-        print("vault: concatenated: %d batches. average batch size: %0.2f" %(len(ds), nb_seq_total/len(ds)))
-        
-        # see if all batch are full
-        for i , (f,l) in enumerate(ds):
-            if f.shape[0] != batch_size or l.shape[0] != batch_size:
-                print("vault: dataset: batch #%d (of %d) is incomplete" %(i, len(ds)), f.shape, l.shape)
-                print("vault: this batch misses %d sequences"  %(batch_size - f.shape[0]))
-
-        # 2 incomplete batch, ie incomplete from the sources batches remains
-        # eg 12948 sequences, 811 batches.  miss 1x14
-
-
-        ################
-        # rebatch
-        # issues when leaving 2 incomplete batches , assert len(pred) == len(list(iter(ds.unbatch())))
-        ################
-
-        print("vault: rebatch to get rid of uncomplete batches")
-        # get rid of multiple incomplete batches by flattening and rebatching
-        # rebatch(N) is functionally equivalent to unbatch().batch(N), but is more efficient,
-        ds = ds.unbatch().batch(batch_size)
-
-        for i , (f,l) in enumerate(ds):
-            if f.shape[0] != batch_size or l.shape[0] != batch_size:
-                print("vault: rebatch: %d miss %d sequences" %(i, batch_size - f.shape[0]), f.shape, l.shape)
-                
-        # 810 batches, one incomplete = 12  
-
-        # for some reason, rebatch looses cardinality
-        ds = ds.apply(tf.data.experimental.assert_cardinality(i+1))
-        print("\nvault: combined synthetic and real data(training) dataset READY")
-
-    else:
-
-        raise Exception("%s not implemented" %config_model.sdv_train)
-
-    # end of vault. ds is syn + real(training)
-
-
-print("\n####\ndataset (possibly including synthetic data) ready for training\n####\n")
+print("\n####\ndataset ready for training\n####\n")
 
 ##############################
 # GOAL: split dataset for validation strategy
@@ -1320,21 +1143,17 @@ print("\n####\ndataset (possibly including synthetic data) ready for training\n#
 # MODIFIED before training proper ??? WHY IS THIS NEED TO BE REDONE ???
 # not sure if kfold can be used together with tuner
 (train_ds, val_ds, test_ds, ds_dict) = dataset.fixed_val_split(ds, nb_seq, nb_hours, split, retain, batch_size)
-# WARNING: test_ds can contains synthetic data, so .evaluate() will NOT be the same as model already training only with real data
 
 ####################################
 # GOAL: build solar production histograms from dataset
-# possibly contains mix of real and synthetic data
 ####################################
 
 # build histogram with configured bins (should set for BOTH classification and regression)
 #  should correlate with bin boundaries (if set with quantile)
 #  model performance should beat this (ie with 4 bins and EQUAL number of sample per bins, ramdon performance is 25%)
-# NOTE: dataset can include synthetic data
 
 # those may be needed for retrain, so on PI as well
 
-# WARNING: this could contains synthetic data and uses production from sequence dataset (see below using production data directly)
 print("\nhistogram of solar production from dataset, using %s" %prod_bins)
 histo_prod, majority_class_percent, majority_y_one_hot = enphase.build_solar_histogram_from_ds_prior_training(ds, prod_bins)
 
@@ -1381,7 +1200,7 @@ model_param_dict = {
 # record training metrics 
 ########################################
 
-if arg['train'] or arg["synthetic"] or arg['retrain']:
+if arg['train'] or arg['retrain']:
 
     # Index(['model', 'train_test', 'categorical accuracy', 'precision', 'recall', 'prc']
     # for every case involding training
@@ -1407,8 +1226,8 @@ if arg['train'] or arg["synthetic"] or arg['retrain']:
 # if tuner: 
 #    search and train on best model . EXIT
 
-# else if train/retrain/vault:  (ie all case doing "manual training")
-#    if retrain/vault, get previous metrics
+# else if train/retrain:  (ie all case doing "manual training")
+#    if retrain, get previous metrics
 #    train, evaluate, predict on ds, plot, update evaluate dataframe, save, upate record run
 #    if retrain: update gui
 #    if vault: evaluate on real test data. EXIT
@@ -1468,7 +1287,7 @@ if arg["kerastuner"]:
 
     # train model with best hyperparameters on entiere dataset
     print('\nkeras tuner: best hyperparameters: RETRAIN from scratch using train_ds')
-    (new_model, history, elapse) = train_and_assess.train(best_to_train, epochs, train_ds, val_ds, model_param_dict, verbose =0)
+    (new_model, history, elapse) = train_and_assess.train(best_to_train, epochs, train_ds, val_ds, model_param_dict, checkpoint = False, verbose =0)
 
     (m_test, m_train, ep) = train_and_assess.metrics_from_evaluate(new_model, test_ds, train_ds, history)
     print('\nkeras tuner: best hyperparameters: RETRAINED, metrics from evaluate, test %s, train %s' %(m_test, m_test))
@@ -1503,26 +1322,22 @@ if arg["kerastuner"]:
 # all cases involving training
 #   features
 #   or features + untrained
-#   or synthetic + features (training set)
-
 ###########################################################
 
-elif arg['train'] or arg['retrain'] or arg['synthetic']:
+elif arg['train'] or arg['retrain']:
 
     #############################
-    # if trying to improve from existing trained model , using new unseen data, or using synthetic data, first get starting point
-    # WARNING: assumes a "baseline", ie without synthetic trained model already exists
+    # if trying to improve from existing trained model , using new unseen data,  first get starting point
+    # WARNING: assumes a "baseline" trained model already exists
     # load the model just to get "current" metrics
     #############################
 
-
-    # WARNING: test_ds could contains synthetic data, so .evaluate() will NOT be the same as model already training only with real data
     # could also look at stored metrics
-    if arg["retrain"] or arg["synthetic"]:
+    if arg["retrain"]:
 
-        print("\nretrain or train from larger dataset containing synthetic data. load model just to get current metrics:")
+        print("\nretrain. load model just to get current metrics:")
 
-        # load model before retrain or training with synthetic, just to get accuracy (and later check if/how improved)
+        # load model before retrain  just to get accuracy (and later check if/how improved)
         try:
             model, h5_size, _ = pabou.load_model(model_name, 'tf')
 
@@ -1534,13 +1349,8 @@ elif arg['train'] or arg['retrain'] or arg['synthetic']:
         # evaluate previous model. use to check if we improved. also used in GUI label
 
 
-        if arg["synthetic"]:
-            test = test_ds_real
-        else:
-            test =test_ds
-
-        model_metrics_before_retrain_dict  = model.evaluate(test, return_dict=True, verbose=0)
-        print("about to retrain or use synthetic: current metrics:\n", model_metrics_before_retrain_dict)
+        model_metrics_before_retrain_dict  = model.evaluate(test_ds, return_dict=True, verbose=0)
+        print("about to retrain: current metrics:\n", model_metrics_before_retrain_dict)
 
         del(model) # make sure
 
@@ -1550,12 +1360,6 @@ elif arg['train'] or arg['retrain'] or arg['synthetic']:
     # DO NOT USE ds (only train ds). this would means norm.adapt() is done on total ds and model "see" test set. MAYBE BAD
     # BUT on the other end, using ds allows to handle validation split strategy later
         
-
-    ## do I need to increase model capacity because larger training set ?
-    if arg["synthetic"] and config_model.sdv_train == "retrain":
-        pass
-        nb_lstm_layer = nb_lstm_layer + 1
-    
 
     ########################
     # build model
@@ -1567,38 +1371,15 @@ elif arg['train'] or arg['retrain'] or arg['synthetic']:
     # plot model architecture
     pabou.see_model_info(model, os.path.join(models_dir , model_name +'_architecture.png') )
 
+    ################################
+    # train FROM SCRATCH with ds
+    ###############################
 
-    # TRAIN  model 
-    # if using sdv, only option implemented so far is retrain from scratch,  vs continue training
+    # do I need to return model ?
+    # can use checkpoint call back 
+    model, history, elapse = train_and_assess.train(model, epochs, train_ds, val_ds, model_param_dict, checkpoint = True, verbose=0)
 
-    if not arg["synthetic"] or (arg["synthetic"] and config_model.sdv_train == "retrain"):
-
-        ################################
-        # train FROM SCRATCH with ds
-        ###############################
-
-        # do I need to return model ?
-        model, history, elapse = train_and_assess.train(model, epochs, train_ds, val_ds, model_param_dict, verbose=0)
-
-        # history contains metrics configured in model_solar.get_metrics(categorical) BOTH met and val_met  , plus loss and lr
-
-    # sdv continue
-    elif config_model.sdv_dir == "continue":
-        ################################
-        # train on one ds and CONTINUE on the other one
-        # RATHER train from scratch with a dataset containing real and synthetic data
-        # stupid: is the same as concanating ds ? 
-        # would make sense if 2nd dataset is available at a later time
-        ###############################
-        raise Exception("continue is the same as concatenating dataset")
-
-    # sdv freeze (ie transfert learning)  
-    elif config_model.sdv_dir == "freeze":
-        raise Exception("freeze not implemented")
-        
-    else:
-        raise Exception("WTF")
-
+    # history contains metrics configured in model_solar.get_metrics(categorical) BOTH met and val_met  , plus loss and lr
 
     #########################
     ## model trained
@@ -1717,7 +1498,6 @@ elif arg['train'] or arg['retrain'] or arg['synthetic']:
     p_r_dict = train_and_assess.plot_examine_training_results(model, test_ds, history, model_param_dict)
 
     # make sure the keys are not misspelled
-
     train_and_assess.metric_to_json(categorical, p_r_dict)
 
 
@@ -1747,12 +1527,14 @@ elif arg['train'] or arg['retrain'] or arg['synthetic']:
     # SAVE model
     ##########################
 
-    # tf and h5 format. weigth from 999 epoch, architecture as json
+    # both tf and h5 format. save weigth as epoch 999, architecture as json
+    # callback also save model or weigths
 
     # 'solar2ev' + '_full_model.h5'
+    # https://www.tensorflow.org/tutorials/keras/save_and_load
+    print("\nsaving model %s in all formats (SaveModel, h5, weigths, json)" %model_name)
 
-    print("\n saving model %s in all formats" %model_name)
-    pabou.save_full_model(model_name, model) # signature = False
+    pabou.save_full_model(model_name, model) # signature = False , dir created if needed
 
     print('h5 model size %0.1fMb' %pabou.get_h5_size(model_name))
 
@@ -1786,10 +1568,9 @@ elif arg['train'] or arg['retrain'] or arg['synthetic']:
 
 
     ##################################
-    # GOAL: update blynk model info in GUI
+    # do NOT update blynk model info in GUI
+    # do NOT update text and metrics gauge
     #################################
-
-    # text and metrics gauge
 
     # starting blynk when training is an overkill when developping model
     # for all option except those who call inference_from_web_at_a_day(), only ONE model is loaded
@@ -1799,64 +1580,8 @@ elif arg['train'] or arg['retrain'] or arg['synthetic']:
     #   ie run evaluate on both model 
         
     
-    #########################################
-    # GOAL: evaluate vauld model (ie trained on real + synthetic data) on ONLY REAL date
-    # ie real data's test set
-    ##########################################
 
-    if arg["synthetic"]:
-
-        # if training set was (synthetic + real) data, the meaningfull test is to use data never seen (ie real data test set)
-        # real data test set (and validation set) was not combined with synthetic, no never seen
-        # need to evaluate model on real data. have we improve performance ?
-
-        print("\n\nvault: evaluate model trained on synthetic + real data on WHAT REALLY MATTER, ie test set for REAL data (never seen)")
-
-        ##################
-        # evaluate on real data test set
-        # see if it improved ?
-        ##################
-
-        print('\nvault: .evaluate() VAULT model ONLY on real data test dataset')
-        r = model.evaluate(test_ds_real, return_dict=True, verbose = 0)
-        
-        print("metrics from training with synthetic data:")
-        for k in r.keys():
-            print ("%s : %0.2f" %(k,r[k]))
-
-        print("baseline metrics, ie without synthetic data:")
-        print(model_metrics_before_retrain_dict)
-
-        (metrics_test, metrics_train, ep) = train_and_assess.metrics_from_evaluate(model, test_ds_real, train_ds, history)
-
-        print('vault: .evaluate() on test_ds_real, ie real data test set. Metrics: test: %s , train: %s, epochs: %d, majority class: %0.2ff \n\n' 
-            %(metrics_test, metrics_train, ep, majority_class_percent))
-
-        print("vault: .predict(test_ds_real)")
-        nb,nb_correct, nb_correct1,  _ = inference.predict_on_ds_with_labels(model, test_ds_real, s="vault")
-    
-
-        ##################
-        # SAVE and BENCH
-        ##################
-
-        if categorical:
-            a = app_name + "_syn_cat"
-        else:
-            a = app_name + "_syn_reg"
-            
-        print("vault: save model trained on real + synthetic data: %s" %a)
-        pabou.save_full_model(a, model) # signature = False
-
-
-        ##################
-        # EXIT
-        ##################
-        print("\n\n##########\nvault. EXIT. please analyze result (see if model improved)\n########\n")
-
-        sys.exit(1)
-
-    # end of TRAIN/RETRAIN/VAULT
+    # end of TRAIN/RETRAIN
     # ie all cases involving training a model
 
 
@@ -1866,8 +1591,12 @@ elif arg['train'] or arg['retrain'] or arg['synthetic']:
 else:
 
     try:
+        x = 'tf' # directory
+        x = 'h5' # single file, easier to transfert from Windows to raspberry Pi
+        x = "v3" # latest, recommended. zip. not saved as zip on 2.10 ??? but as h5 ??
+
         x = 'tf'
-        x = 'h5' # easier to transfert from Windows to raspberry Pi
+
         print('\nload model (format: %s): %s' %(x, app_name))
         model, h5_size, _ = pabou.load_model(model_name, x)
         if model ==  None:
@@ -1882,6 +1611,8 @@ else:
         if not running_on_edge:
             print("running on desktop .evaluate(test dataset), ie remind me the accuracy:")
             # remind me, what is the accuracy of the current model
+
+            # verbose = 1, trace 
             loaded_model_metrics_dict  = model.evaluate(test_ds, return_dict=True, verbose=0) # return dict = false returns a list, with loss as first element
             print("%s" %str(loaded_model_metrics_dict))
 
@@ -1935,6 +1666,14 @@ print("############################################################")
 #train/retrain/vault: plot evaluate dataframe
 #GUI: sleep
 
+if arg["test_blynk"]:
+    s = "%s testing blynk. update GUI model tab" %datetime.datetime.now()
+    print(s)
+    logging.info(s)
+
+    blynk_ev.blynk_v_write(vpins.v_terminal, s)
+
+    inference.update_GUI_model_tab()
 
 #########################################################
 # GOAL: run inference to predict tomorrow's solar 
@@ -2237,7 +1976,7 @@ if arg["unseen"] :
 # GOAL: plot evaluate dataframe 
 #######################################
 
-if arg['train'] or arg['retrain'] or arg['synthetic']:
+if arg['train'] or arg['retrain'] :
 
     # created by all training cases
 

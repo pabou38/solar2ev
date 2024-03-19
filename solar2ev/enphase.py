@@ -480,7 +480,7 @@ def solar_quentile_from_df(energy:pd.DataFrame):
     #0.25     8.409500
     #0.50    16.681959
     #0.75    22.636876
-    print("energy quartile (4 bins):\n" , quartile)
+    print("energy quartile (4 bins):\n" , quartile.to_list())
 
     x = 0.5
     quantile_median = energy.quantile(x)
@@ -488,7 +488,7 @@ def solar_quentile_from_df(energy:pd.DataFrame):
 
     x = [.33, .66] 
     quartile = energy.quantile(x) # serie
-    print("energy quartile (3 bins):\n" , quartile)
+    print("energy quartile (3 bins):\n" , quartile.to_list())
 
 
 

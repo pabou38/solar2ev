@@ -45,8 +45,10 @@ def all_log(s, event):
 # 1st colum is date. check does not update twice same day
 # check vs today(), ie when the code is ran (not as_if date for postmortem. anyway, there is a fixed delta, and this is going to be aggregated)
 #############################
+    
+# ubuntu does not support list[str]
 
-def append_to_history_csv(row, hist_csv:str, hdr:list[str]):
+def append_to_history_csv(row, hist_csv:str, hdr:list):
 
     if os.path.exists(hist_csv):
         # add at the end of the csv file, if not already updated

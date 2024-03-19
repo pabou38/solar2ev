@@ -172,7 +172,7 @@ def brutal_force():
                                                         }
 
                                                     print("\n==>> about to train %d out of total %d training" %(i, brutal_force_space.space_size))
-                                                    model, history, elapse = train_and_assess.train(model, epochs, train_ds, val_ds, model_param_dict, verbose=0)
+                                                    model, history, elapse = train_and_assess.train(model, epochs, train_ds, val_ds, model_param_dict, checkpoint=False, verbose=0)
 
                                                     (metrics_test, metrics_train, ep) = train_and_assess.metrics_from_evaluate(model, test_ds, train_ds, history)
 
