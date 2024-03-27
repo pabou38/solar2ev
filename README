@@ -1,6 +1,6 @@
-#solar2ev
+# solar2ev
 
-##AI is maximizing Solar for my EV
+## AI is maximizing Solar for my EV
 
 An AI application predicting next day's solar production for a given solar array and configuring EV charger accordingly.
 
