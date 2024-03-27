@@ -1,0 +1,61 @@
+# systemd supports two types of timers: real-time (based on calendar) and monotonic (based on events)
+# Monotonic timers are triggered at a specified time elapsed from a certain event, such as a system boot or system unit activation event
+
+[Unit]
+Description="solar2ev regular retrain systemd Timer"
+
+[Timer]
+
+#OnBootSec=5min # Specifies a timer that triggers the service five minutes after the system boot. See Monotonic timers for details.
+#OnUnitActiveSec=24h # Specifies a timer that triggers the service 24 hours after the service has been activated (that is, the timer triggers the service once a day). See Real-time timer for details.
+
+#OnCalendar=Mon..Fri *-*-* 10:00:00
+
+# OnCalendar=DayOfWeek Year-Month-Day Hour:Minute:Second 
+#OnCalendar=Mon..Sun *-*-* 20:00:00
+
+# Once a month, the 2nd at 9am
+OnCalendar=Mon..Sun *-*-2 09:00:*
+
+Unit=solar2ev_retrain.service
+
+[Install]
+WantedBy=multi-user.target
+
+
+# to check file
+#systemd-analyze verify /etc/systemd/system/solar2ev.*
+
+# check OnCalendar. tell hom many mn left
+#systemd-analyze calendar "Tue,Sun *-*-* 01,03:00:00"
+
+
+# systemcl enable, start, status solar2ev.timer
+
+#sudo systemctl enable solar2ev.timer #Enable the timer to make sure that it is activated on boot:
+#sudo systemctl start solar2ev.timer # Activates the timer for the current session only.
+
+#sudo systemctl list-timers
+
+# sudo journalctl -u solar2ev.timer # show timer started
+# sudo journalctl -u solar2ev # show service execution from timer
+
+# sudo systemctl status solar2ev.timer
+# show waiting time and last trigger (bullet is red if execution failed ?, green if OK, white if not triggered yet)
+# Active: active (waiting) since Tue 2024-02-20 11:17:00 CET; 13min ago
+#    Trigger: Wed 2024-02-21 11:20:00 CET; 23h left
+#    Triggers: ● solar2ev.service
+
+# sudo systemctl status solar2ev
+# show execution
+
+# before (first?) triggering
+#Loaded: loaded (/lib/systemd/system/solar2ev_postmortem.service; static)
+#Active: inactive (dead)
+#TriggeredBy: ● solar2ev_postmortem.timer
+
+#Feb 20 11:36:17 pi4 systemd[1]: Started solar2ev.service - "solar2ev".
+#Feb 20 11:36:46 pi4 start_solar2ev.sh[3209]: /home/pi/APP/solar2ev/solar2ev.py:916: FutureWarning: Series.__getitem__ treating keys as posit>
+#Feb 20 11:36:46 pi4 start_solar2ev.sh[3209]:   last_seen = df_model.iloc[-1] [0]
+#Feb 20 11:37:31 pi4 systemd[1]: solar2ev.service: Deactivated successfully.
+#Feb 20 11:37:31 pi4 systemd[1]: solar2ev.service: Consumed 2min 11.100s CPU time.
