@@ -1,0 +1,59 @@
+
+#https://forums.raspberrypi.com/viewtopic.php?t=357739
+
+# p for human readable, pretty
+
+# devices: wlan0, lo, p2p-dev-wlan0 , eth0
+# connection 
+
+pi@pi4:~ $ nmcli dev (default = status)
+DEVICE         TYPE      STATE                   CONNECTION
+wlan0          wifi      connected               preconfigured
+lo             loopback  connected (externally)  lo
+p2p-dev-wlan0  wifi-p2p  disconnected            --
+eth0           ethernet  unavailable             --
+
+
+pi@pi4:~ $ nmcli con (default = show)
+NAME                UUID                                  TYPE      DEVICE
+preconfigured       22fcce68-273d-45eb-b401-d576c5e21faf  wifi      wlan0
+lo                  7010b021-1f3d-45e2-b440-38864790f539  loopback  lo
+Wired connection 1  775f2b0c-c089-3582-8d6f-a528135fe5ce  ethernet  --
+
+
+# get details, IP, gw, route
+nmcli dev show wlan0 
+
+# ssid, wifi details, 
+nmcli con show preconfigured
+
+# unmanaged
+nmcli device set wlan0 managed yes
+
+####################
+# fixed IP
+####################
+
+# cannot be eth0, is a connection name
+sudo nmcli con mod "Wired connection 1" ipv4.addresses 192.168.1.220/24
+
+# gateway, DNS
+sudo nmcli con mod "Wired connection 1" ipv4.gateway 192.168.1.1
+sudo nmcli con mod "Wired connection 1" ipv4.dns 192.168.1.1
+sudo nmcli con mod "Wired connection 1" ipv4.method manual
+
+
+sudo nmcli con mod preconfigured ipv4.gateway 192.168.1.1
+sudo nmcli con mod preconfigured ipv4.dns 192.168.1.1
+sudo nmcli con mod preconfigured ipv4.method manual
+
+
+# nm maintains connection information in /etc/NetworkManager/system-connections/*.nmconnection
+#  preconfigured.nmconnection  
+#  'Wired connection 1.nmconnection'
+
+# nmcli update *.nmconnection
+[ipv4]
+address1=192.168.1.221/24,192.168.1.1
+dns=192.168.1.1;
+method=manual
