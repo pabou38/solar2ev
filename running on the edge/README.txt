@@ -23,7 +23,9 @@ solar2ev is started from a virtual env. see start_solar2ev.sh
 
 
 script which run from main:
-- solar2ev  (see solar2ev -h for all options)
+- solar2ev  (see solar2ev -h for all options). can run on the edge
+
+
 - brutal_force (train on combination of input features and log metrics to xls file)
 - synthetic_generate  (generate synthetic data)
 - synthetic_train (retrain model with synthetic data), see -h for all options
