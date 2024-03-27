@@ -1,0 +1,37 @@
+Site specific modules, ie how to adap the application to other meteorological data source, 
+other solar data source or other EV charger brand. 
+
+
+METEO:
+------
+in meteo.py
+
+one_day(date: datetime, expected_hours:int, station_id = config_features.station_id) -> dict
+
+    returns a dictionary, containing the meteo data for a given day
+    hour (0 to 23, as an str) is the key to this dictionary
+    can ask for current day (ie do not expect 24 hours) 
+    the value is a list, defined as:
+        header_csv = ['date', 'hour', 'temp', 'humid', 'direction','wind', 'pressure'] 
+
+
+SOLAR:
+------
+in enphase_API_V4.py 
+
+get_daily_solar_from_date_to_date(from_date: datetime.datetime, end_date:datetime.datetime) -> list
+    returns a list, with daily energy production in Wh (from_date and end_date included)
+
+get_telemetry_energy_from_date(start_date = None)
+    return energy production for a given day
+    default today
+    return Wh and day
+
+
+EV Charger:
+-----------
+in myenergi.py
+
+set_up_car_charger(energy_amount)
+    # configure the EV charger with a given energy amount (defined in GUI)
+    # I use hours, but could be customized to use kWh, soc(state of charge), ..
