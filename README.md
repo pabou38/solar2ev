@@ -8,6 +8,6 @@ An AI application predicting next day's solar production for a given solar array
 
 [*Running on the edge*](https://github.com/pabou38/solar2ev/blob/main/running%20on%20the%20edge/README.txt)
 
-[*Site specific:*](https://github.com/pabou38/solar2ev/blob/main/site%20specific.txt)
+[*Site specific*](https://github.com/pabou38/solar2ev/blob/main/site%20specific.txt)
 
 
